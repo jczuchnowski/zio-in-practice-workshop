@@ -33,7 +33,12 @@ object Exercise1 {
       * Use `flip`.
       */
     def transformError2(funcIO: Task[Int]): IO[ServiceError, Int] = ???
-  
+
+    /**
+      * Map both error and value.
+      */
+    def transform(funcIO: Task[Int]): IO[ServiceError, String] = ???
+
   }
 
   object Option {
@@ -77,6 +82,33 @@ object Exercise1 {
       * What is the return type.
       */
     def getAssets = ???
+
+  }
+
+  object Temporal {
+
+    import zio.clock.Clock
+    
+    trait Database
+    trait DbError
+    trait Connection
+
+    val getConnection: ZIO[Database, DbError, Connection] = ???
+
+    /**
+      * Retry every 10 secends.
+      */
+    val retry1: ZIO[Database with Clock, DbError, Connection] = ???
+
+    /**
+      * Retry 5 times.
+      */
+    val retry2: ZIO[Database with Clock, DbError, Connection] = ???
+
+   /**
+      * Retry every 5 seconds 5 times.
+      */
+    val retry3: ZIO[Database with Clock, DbError, Connection] = ???
 
   }
 
