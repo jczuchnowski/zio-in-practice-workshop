@@ -1,6 +1,9 @@
 package zio.workshop
 
 import zio._
+import java.io.IOException
+import zio.duration.Duration
+import java.util.concurrent.TimeUnit
 
 object Exercise1 {
   
@@ -14,7 +17,9 @@ object Exercise1 {
     /**
       * 
       */
-    def wrapped(path: java.nio.file.Path): IO[java.io.IOException, List[String]] = ???
+    def wrapped(path: java.nio.file.Path): IO[java.io.IOException, List[String]] =
+      ZIO.effect(getLines(path)).refineToOrDie[IOException]
+      
   }
 
   object Errors {
@@ -25,18 +30,24 @@ object Exercise1 {
       * Map error from Throwable to ServiceError.
       * Use `mapError`.
       */
-    def transformError(funcIO: Task[Int]): IO[ServiceError, Int] = ???
+    def transformError(funcIO: Task[Int]): IO[ServiceError, Int] =
+      funcIO.mapError(e => new ServiceError(e.getMessage()))
       
     /**
       * Map error from Throwable to ServiceError.
       * Use `flip`.
       */
-    def transformError2(funcIO: Task[Int]): IO[ServiceError, Int] = ???
+    def transformError2(funcIO: Task[Int]): IO[ServiceError, Int] =
+      funcIO.flip.map(e => new ServiceError(e.getMessage())).flip
 
     /**
       * Map both error and value.
       */
-    def transform(funcIO: Task[Int]): IO[ServiceError, String] = ???
+    def transform(funcIO: Task[Int]): IO[ServiceError, String] =
+      funcIO.bimap(
+        e => new ServiceError(e.getMessage),
+        a => a.toString()
+      )
 
   }
 
@@ -81,7 +92,11 @@ object Exercise1 {
         * Option[A] ~ Either[Unit, A]
         * Either[A, Option[B]] ~ Either[Option[A], B]
         */
-      def getPortfolioValue(userId: UserId): IO[RepositoryError, Option[Int]] = ???
+      def getPortfolioValue(userId: UserId): IO[RepositoryError, Option[Int]] =
+        (for {
+          portfolio <- getPortfolioByUserId(userId).some
+          assets    <- getAssets(portfolio.assets).mapError(Some(_))
+        } yield assets.foldLeft(0) { case (a, v) => a + v.value }).optional
 
     }
   }
@@ -103,11 +118,17 @@ object Exercise1 {
       def getAssets(ids: Set[Long]): Task[Set[Asset]]
     }
 
+    type Repositories = UserRepository with AssetRepository
     /**
       * Return user's assets and log a message.
       * What is the return type.
       */
-    def getAssets = ???
+    def getAssets: ZIO[Repositories with Logger, Throwable, Set[Asset]] =
+      for {
+        user   <- ZIO.accessM[UserRepository](_.getUser)
+        _      <- ZIO.accessM[Logger](_.log("found user"))
+        assets <- ZIO.accessM[AssetRepository](_.getAssets(user.assets)) 
+      } yield assets
 
   }
 
@@ -121,20 +142,27 @@ object Exercise1 {
 
     val getConnection: ZIO[Database, DbError, Connection] = ???
 
+    import zio.duration._
+    import zio.duration.Duration._
     /**
       * Retry every 10 secends.
       */
-    val retry1: ZIO[Database with Clock, DbError, Connection] = ???
+    val retry1: ZIO[Database with Clock, DbError, Connection] =
+      getConnection.retry(Schedule.fixed(Duration.apply(10, TimeUnit.SECONDS)))
 
     /**
       * Retry 5 times.
       */
-    val retry2: ZIO[Database with Clock, DbError, Connection] = ???
+    val retry2: ZIO[Database, DbError, Connection] =
+      getConnection.retry(Schedule.recurs(5))
+
+    val mySchedule = Schedule.fixed(Duration.apply(5, TimeUnit.SECONDS)) && Schedule.recurs(5)
 
     /**
       * Retry every 5 seconds 5 times.
       */
-    val retry3: ZIO[Database with Clock, DbError, Connection] = ???
+    val retry3: ZIO[Database with Clock, DbError, Connection] =
+      getConnection.retry(mySchedule)
 
   }
 

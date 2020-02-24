@@ -47,7 +47,15 @@ object PokemonClient extends App {
       * @param bytes
       * @return
       */
-    def fromBytes(bytes: Chunk[Byte]): UIO[Pokemon] = ???
+    def fromBytes(bytes: Chunk[Byte]): UIO[Pokemon] = 
+      Ref.make(bytes).flatMap { b =>
+        for {
+          name <- b.modify(Decoder.readCString)
+          hp   <- b.modify(Decoder.readInt)
+          at   <- b.modify(Decoder.readInt)
+          df   <- b.modify(Decoder.readInt)
+        } yield Pokemon(name, hp, at, df)
+      }
 
   }
 
@@ -57,7 +65,7 @@ object PokemonClient extends App {
     * @param channel
     * @return
     */
-  def readPokemonHeader(channel: AsynchronousSocketChannel): IO[Exception, Pokemon] = 
+  def readPokemon(channel: AsynchronousSocketChannel): IO[Exception, Pokemon] = 
     for {
       (id, len) <- channel.read(5).map { header => 
                      (header.toArray.head.toChar, 
@@ -75,7 +83,8 @@ object PokemonClient extends App {
     * @param num
     * @return
     */
-  def processPokemons(stream: Stream[Nothing, Pokemon], n: Int): ZIO[Console, Nothing, Int] = ???
+  def processPokemons(stream: Stream[Nothing, Pokemon], n: Int): ZIO[Console, Nothing, Int] =
+    stream.run(Sink.foldUntil[Int, Pokemon](0, n) { case (a, p) => a + p.attack } )
 
   /**
     * Write a function that will:
@@ -92,6 +101,36 @@ object PokemonClient extends App {
     * @param port
     * @return
     */
-  def open(host: String, port: Int): ZIO[Console, Exception, Unit] = ???
+  def open(host: String, port: Int): ZIO[Console, Exception, Unit] = {
+    // def exec(channel: AsynchronousSocketChannel, address: InetSocketAddress): ZIO[Console, Exception, Unit] = 
+    //   for {
+    //     _ <- channel.connect(address)
+    //     num <- channel.read(4).map(n => JByteBuffer.wrap(n.toArray).getInt)
+    //     queue <- Queue.bounded[Pokemon](num)
+    //     stream = Stream.fromQueue(queue)
+    //     readPokemon <- readPokemonHeader(channel).flatMap(queue.offer).repeat(Schedule.recurs(num)).fork
+    //   }
+
+    for {
+      address <- SocketAddress.inetSocketAddress(host, port)
+      _       <- Managed.make(AsynchronousSocketChannel())(_.close.orDie).use { channel =>
+                  for {
+                    _      <- channel.connect(address)
+
+                    _      <- channel.write(Chunk.fromArray("get".toArray.map(_.toByte)))
+                    num    <- channel.read(4).map(n => JByteBuffer.wrap(n.toArray).getInt)
+
+                    _      <- putStrLn("num " + num)
+                    queue  <- Queue.bounded[Pokemon](num)
+                    stream =  Stream.fromQueue(queue)
+                    _      <- readPokemon(channel).flatMap(p => putStrLn(p.toString()) *> queue.offer(p)).repeat(Schedule.recurs(num)).fork
+                    
+                    result <- processPokemons(stream, num)
+                    _      <- putStrLn("result " + result)
+                  } yield ()
+                }
+    } yield ()
+  }
+
 
 }
