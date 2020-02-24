@@ -13,7 +13,6 @@ object Exercise1 {
 
     /**
       * 
-      *
       */
     def wrapped(path: java.nio.file.Path): IO[java.io.IOException, List[String]] = ???
   }
@@ -46,35 +45,62 @@ object Exercise1 {
     case class UserId(id: Long) extends AnyVal
     case class AssetId(id: Long) extends AnyVal
     case class Asset(name: String, value: Int)
-    case class Portfolio(name: String, assets: List[AssetId])
+    case class Portfolio(name: String, assets: Set[AssetId])
 
-    case class DbError()
+    case class RepositoryError(msg: String)
 
-    private def getPortfolioByUserId(userId: UserId): IO[Exception, Option[Portfolio]] = ???
-    private def getAssets(ids: List[AssetId]): IO[Exception, List[Asset]] = ???
+    object FutureExample {
+      
+      import scala.concurrent.Future
+      
+      implicit val ec = scala.concurrent.ExecutionContext.global
 
-    /**
-      * Return total assets value of a given user.
-      */
-    def getPortfolioValue(userId: UserId): IO[Exception, Option[Int]] = ???
+      private def getPortfolioByUserId(userId: UserId): Future[Option[Portfolio]] = ???
+      private def getAssets(ids: Set[AssetId]): Future[Set[Asset]] = ???
 
+      def getPortfolioValue(userId: UserId): Future[Option[Int]] =
+        for {
+          portfolioOpt <- getPortfolioByUserId(userId)
+          assetsOpt    <- portfolioOpt.map(p => getAssets(p.assets)) match {
+                            case Some(fut) => fut.map(Some(_))
+                            case None      => Future.successful(None)
+                          }
+        } yield assetsOpt.map(l => l.foldLeft(0) { case (a, v) => a + v.value })
+    }
+
+    object ZioWay {
+      
+      private def getPortfolioByUserId(userId: UserId): IO[RepositoryError, Option[Portfolio]] = ???
+      private def getAssets(ids: Set[AssetId]): IO[RepositoryError, Set[Asset]] = ???
+
+      /**
+        * Return total assets value of a given user.
+        * Use `some`, `optional` and `mapError`
+        * 
+        * consider these isomorphisms:
+        * Option[A] ~ Either[Unit, A]
+        * Either[A, Option[B]] ~ Either[Option[A], B]
+        */
+      def getPortfolioValue(userId: UserId): IO[RepositoryError, Option[Int]] = ???
+
+    }
   }
 
   object Environment {
 
-    case class User(name: String, assetIds: List[Long])
+    case class User(name: String, assets: Set[Long])
     case class Asset(name: String, value: String)
 
     trait Logger {
-      def log(messge: String): Task[Unit] = ???
+      def log(messge: String): Task[Unit]
     }
 
     trait UserRepository {
-      def getUser: Task[User] = ???
+      def getUser: Task[User]
     }
 
     trait AssetRepository {
-      def getAssets(ids: List[Long]): Task[List[Asset]]
+      def getAssets(ids: Set[Long]): Task[Set[Asset]]
     }
 
     /**
@@ -105,7 +131,7 @@ object Exercise1 {
       */
     val retry2: ZIO[Database with Clock, DbError, Connection] = ???
 
-   /**
+    /**
       * Retry every 5 seconds 5 times.
       */
     val retry3: ZIO[Database with Clock, DbError, Connection] = ???
